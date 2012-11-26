@@ -57,9 +57,10 @@ void shmtx_lock(shmctx_t *mtx, uint_t id) {
             }
         }
 
-        // 防死锁
         if (++ticks_nop > ticks_per_second/50) {
+#ifdef RB_DEBUG
             printf("ticks_nop: %llu, %lu\n", ticks_nop, *mtx->lock);
+#endif
             shmtx_force_unlock(mtx);
             ticks_nop = 0;
         }

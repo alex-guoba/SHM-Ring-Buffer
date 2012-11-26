@@ -20,7 +20,7 @@ int ringbuf_init(size_t size, size_t n, int key) {
     char *ch;
     int id;
 
-#ifdef _CACHE_ALIGN_
+#ifdef RB_CACHE_ALIGN
     csize = cpuinfo();
     if (csize > 0)
         cacheline_size = (uint32_t)csize;
@@ -47,39 +47,49 @@ int ringbuf_init(size_t size, size_t n, int key) {
     shmtx_init(&mutex_w, (shmtx_sh_t*)ch, 0x800);
     shmtx_init(&mutex_r, (shmtx_sh_t*)(ch + 64), 0x800);
 
+#ifdef RB_DEBUG
     printf("index_r: %u, index_w: %u\n", shm->index_r, shm->index_w);
+#endif
 
     return 0;
 }
 
 
-int ringbuf_push(const char *value) {
+int ringbuf_push(const char *value, size_t len) {
     static pid_t pid = 0;
 
+	if (unlikely(len > shm->size))
+		return -1;
+	
     if (unlikely(pid == 0))
         pid = getpid();
 
     shmtx_lock(&mutex_w, pid);
 
     uint32_t index_w = shm->index_w;
-    uint32_t next = NextPos(index_w, shm->max);
+    uint32_t next = Next_Slot(index_w, shm->max);
     if (next == shm->index_r) {
         shmtx_unlock(&mutex_w, pid);
         return Cache_Full;
     }
 
-    memcpy(shm->datas + index_w * shm->size, value, shm->size);
+    memcpy(shm->datas + index_w * shm->size, value, len);
     atomic_cmp_set(&shm->index_w, index_w, next);
 
     if (!shmtx_unlock(&mutex_w, pid)) {
+#ifdef RB_DEBUG
         printf("push lock exception! %lu\n", *mutex_w.lock);
+#endif
     }
 
     return 0;
 }
 
-int ringbuf_push_unlock(const char *value) {
-    uint32_t next = NextPos(shm->index_w, shm->max);
+int ringbuf_push_unlock(const char *value, size_t len) {
+	if (unlikely(len > shm->size))
+		return -1;
+	
+    uint32_t next = Next_Slot(shm->index_w, shm->max);
     if (next == shm->index_r) {
         return Cache_Full;
     }
@@ -91,40 +101,43 @@ int ringbuf_push_unlock(const char *value) {
 }
 
 
-/*
- *  使用回调的方式push，避免数据copy
- * */
-int ringbuf_push_hook(CopyFunc func, const void *value) {
+int ringbuf_push_hook(CopyFunc func, const void *value, size_t len) {
     static pid_t pid = 0;
 
+	if (unlikely(len > shm->size))
+		return -1;
     if (unlikely(pid == 0))
         pid = getpid();
 
     shmtx_lock(&mutex_w, pid);
 
     uint32_t index_w = shm->index_w;
-    uint32_t next = NextPos(index_w, shm->max);
+    uint32_t next = Next_Slot(index_w, shm->max);
     if (next == shm->index_r) {
         shmtx_unlock(&mutex_w, pid);
         return Cache_Full;
     }
 
-    //memcpy(shm->datas + index_w * shm->size, value, shm->size);
-    if(func(shm->datas + index_w * shm->size, value, shm->size)) {
+    if(func(shm->datas + index_w * shm->size, value, len)) {
         shmtx_unlock(&mutex_w, pid);
         return Hook_Error;
     }
     atomic_cmp_set(&shm->index_w, index_w, next);
 
     if (!shmtx_unlock(&mutex_w, pid)) {
+#ifdef RB_DEBUG
         printf("push lock exception! %lu\n", *mutex_w.lock);
+#endif
     }
 
     return 0;
 }
 
-int ringbuf_push_hook_unlock(CopyFunc func, const void *value) {
-    uint32_t next = NextPos(shm->index_w, shm->max);
+int ringbuf_push_hook_unlock(CopyFunc func, const void *value, size_t len) {
+	if (unlikely(len > shm->size))
+		return -1;
+	
+    uint32_t next = Next_Slot(shm->index_w, shm->max);
     if (next == shm->index_r) {
         return Cache_Full;
     }
@@ -152,13 +165,15 @@ int ringbuf_pop(char *value) {
         return No_Data;
     }
 
-    uint32_t next = NextPos(index_r, shm->max);
+    uint32_t next = Next_Slot(index_r, shm->max);
 
     memcpy(value, shm->datas + index_r * shm->size, shm->size);
     atomic_cmp_set(&shm->index_r, index_r, next);
 
     if (!shmtx_unlock(&mutex_r, pid)) {
+#ifdef RB_DEBUG
         printf("pop lock exception! %lu \n", *mutex_r.lock);
+#endif
     }
 
     return 0;
@@ -170,7 +185,7 @@ int ringbuf_pop_unlock(char *value) {
     }
 
     memcpy(value, shm->datas + shm->index_r * shm->size, shm->size);
-    shm->index_r = NextPos(shm->index_r, shm->max);
+    shm->index_r = Next_Slot(shm->index_r, shm->max);
 
     return 0;
 }

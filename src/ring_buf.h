@@ -14,7 +14,7 @@
 
 #define size_align(d, a)     (((d) + (a - 1)) & ~(a - 1))
 
-#define NextPos(x, max) ((x) + 1) % (max)
+#define Next_Slot(x, max) ((x) + 1) % (max)
 
 typedef int (*CopyFunc)(void *dest, const void *src, size_t n);
 
@@ -43,11 +43,11 @@ typedef struct {
 
 int ringbuf_init(size_t size, size_t n, int key);
 
-int ringbuf_push(const char *value);
-int ringbuf_push_unlock(const char *value);
+int ringbuf_push(const char *value, size_t len);
+int ringbuf_push_unlock(const char *value, size_t len);
 
-int ringbuf_push_hook(CopyFunc func, const void *value);
-int ringbuf_push_hook_unlock(CopyFunc func, const void *value);
+int ringbuf_push_hook(CopyFunc func, const void *value, size_t len);
+int ringbuf_push_hook_unlock(CopyFunc func, const void *value, size_t len);
 
 int ringbuf_pop(char *value);
 int ringbuf_pop_unlock(char *value);
