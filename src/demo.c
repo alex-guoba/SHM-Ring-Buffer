@@ -87,7 +87,7 @@ void write_cycle(void) {
     CPU_TIMER_INIT(1);
 
     while(1) {
-        ret = ringbuf_push((char*)&node);
+        ret = ringbuf_push((char*)&node, sizeof(node));
         if (ret) {
             errcnt++;
             //printf("push ret: %d, cnt: %u\n", ret, cnt);
